@@ -209,7 +209,10 @@ section{padding:3.5rem 0}
 .calc-input-wrap input{width:100%;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:.75rem .75rem .75rem 2rem;font-family:inherit;font-size:.93rem;color:var(--text);outline:none;transition:border-color .2s}
 .calc-input-wrap input:focus{border-color:var(--ymanci)}
 .calc-total-field .calc-total{background:rgba(45,42,123,.07);border:1.5px solid rgba(45,42,123,.15);border-radius:8px;padding:.75rem 1rem;font-weight:800;font-size:1rem;color:var(--ymanci);min-height:44px;display:flex;align-items:center}
-.credit-row{display:flex;gap:.6rem;align-items:center;margin-bottom:.65rem}
+.calc-col-labels{display:flex;gap:.6rem;align-items:center;margin-bottom:.4rem;margin-top:-.3rem}
+.calc-col-label{font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.credit-ira{font-size:.72rem;color:var(--accent);font-weight:700;margin-top:.15rem;min-height:1rem}
+.credit-row{display:flex;gap:.6rem;align-items:flex-start;margin-bottom:.65rem;flex-wrap:nowrap}
 .credit-type{flex:0 0 140px;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:.72rem .7rem;font-family:inherit;font-size:.83rem;color:var(--text);outline:none;cursor:pointer}
 .credit-remove{width:30px;height:30px;flex-shrink:0;border-radius:50%;background:rgba(232,96,10,.1);color:var(--accent);font-size:.8rem;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;transition:background .2s}
 .credit-remove:hover{background:rgba(232,96,10,.25)}
@@ -483,8 +486,15 @@ section{padding:3.5rem 0}
               <option value="renouv">Renouvelable</option>
             </select>
             <div class="calc-input-wrap" style="flex:1"><span class="calc-unit">€</span><input type="number" placeholder="Mensualité" min="0" class="credit-amount" oninput="calcUpdate()"></div>
+            <div class="calc-input-wrap" style="flex:1"><span class="calc-unit">€</span><input type="number" placeholder="Capital restant dû" min="0" class="credit-crd" oninput="calcUpdate()"></div>
             <button class="credit-remove" onclick="removeCredit(this)" title="Supprimer">✕</button>
           </div>
+        </div>
+        <div class="calc-col-labels">
+          <div class="calc-col-label" style="flex:0 0 140px">Type</div>
+          <div class="calc-col-label" style="flex:1">Mensualité</div>
+          <div class="calc-col-label" style="flex:1">Capital restant dû</div>
+          <div style="width:30px"></div>
         </div>
         <button class="btn-add-credit" onclick="addCredit()">+ Ajouter un crédit</button>
         <div class="calc-row" style="margin-top:1rem">
@@ -597,17 +607,18 @@ document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
 function val(id){ return parseFloat(document.getElementById(id)?.value)||0; }
 
 function addCredit(){
-  const list = document.getElementById('credits-list');
-  const div = document.createElement('div');
+  var list = document.getElementById('credits-list');
+  var div = document.createElement('div');
   div.className = 'credit-row';
-  div.innerHTML = `<select class="credit-type" onchange="calcUpdate()">
-    <option value="conso">Crédit conso</option>
-    <option value="immo">Crédit immo</option>
-    <option value="auto">Crédit auto</option>
-    <option value="renouv">Renouvelable</option>
-  </select>
-  <div class="calc-input-wrap" style="flex:1"><span class="calc-unit">€</span><input type="number" placeholder="Mensualité" min="0" class="credit-amount" oninput="calcUpdate()"></div>
-  <button class="credit-remove" onclick="removeCredit(this)" title="Supprimer">✕</button>`;
+  div.innerHTML = '<select class="credit-type" onchange="calcUpdate()">'
+    + '<option value="conso">Cr\u00e9dit conso</option>'
+    + '<option value="immo">Cr\u00e9dit immo</option>'
+    + '<option value="auto">Cr\u00e9dit auto</option>'
+    + '<option value="renouv">Renouvelable</option>'
+    + '</select>'
+    + '<div class="calc-input-wrap" style="flex:1"><span class="calc-unit">\u20ac</span><input type="number" placeholder="Mensualit\u00e9" min="0" class="credit-amount" oninput="calcUpdate()"></div>'
+    + '<div class="calc-input-wrap" style="flex:1"><span class="calc-unit">\u20ac</span><input type="number" placeholder="Capital restant d\u00fb" min="0" class="credit-crd" oninput="calcUpdate()"></div>'
+    + '<button class="credit-remove" onclick="removeCredit(this)" title="Supprimer">\u2715</button>';
   list.appendChild(div);
 }
 
@@ -628,10 +639,29 @@ function calcUpdate(){
   var rev = val('rev1') + val('rev2') + val('rev3');
   document.getElementById('totalRev').textContent = rev > 0 ? fmt(rev) : '0 \u20ac';
 
-  var amounts = Array.from(document.querySelectorAll('.credit-amount')).map(function(i){ return parseFloat(i.value)||0; });
-  var totalCredits = amounts.reduce(function(a,b){ return a+b; },0);
+  var rows = document.querySelectorAll('.credit-row');
+  var totalMens = 0;
+  var totalCRD = 0;
+  var totalIRA = 0;
+
+  rows.forEach(function(row){
+    var type = row.querySelector('.credit-type') ? row.querySelector('.credit-type').value : 'conso';
+    var mens = parseFloat(row.querySelector('.credit-amount') ? row.querySelector('.credit-amount').value : 0) || 0;
+    var crd  = parseFloat(row.querySelector('.credit-crd')    ? row.querySelector('.credit-crd').value    : 0) || 0;
+
+    // IRA : 1% du CRD pour les prêts hors immo si CRD > 10 000€
+    var ira = 0;
+    if(type !== 'immo' && crd > 10000){
+      ira = crd * 0.01;
+    }
+
+    totalMens += mens;
+    totalCRD  += crd;
+    totalIRA  += ira;
+  });
+
   var loyer = val('loyer');
-  var totalCharges = totalCredits + loyer;
+  var totalCharges = totalMens + loyer;
   document.getElementById('totalCharges').textContent = totalCharges > 0 ? fmt(totalCharges) : '0 \u20ac';
 
   var result = document.getElementById('calcResult');
@@ -641,16 +671,19 @@ function calcUpdate(){
   var treso = val('treso');
   var duree = parseInt(document.getElementById('duree').value);
 
-  var tauxMensuel = 0.0703 / 12;
-  var montantRAC = totalCredits * duree * 0.6 + treso;
+  // Montant financé = CRD total + IRA + trésorerie
+  // Si pas de CRD renseigné, estimation conservatrice sur les mensualités
+  var montantRAC = totalCRD > 0 ? (totalCRD + totalIRA + treso) : (totalMens * duree * 0.6 + treso);
   if(montantRAC < treso) montantRAC = treso;
 
+  // Taux 7,03% annuel fixe
+  var tauxMensuel = 0.0703 / 12;
   var nouvMens = 0;
   if(montantRAC > 0){ nouvMens = calcPMT(tauxMensuel, duree, montantRAC); }
 
   var totalApres = nouvMens + loyer;
   var teApres = totalApres / rev;
-  var gain = totalCredits - nouvMens;
+  var gain = totalMens - nouvMens;
 
   var boxClass, icon, titre, conseil;
   if(teActuel <= 0.35){
@@ -673,9 +706,17 @@ function calcUpdate(){
   var colorActuel = teActuel > 0.35 ? '#dc2626' : '#0fa96e';
   var colorApres  = teApres  > 0.35 ? '#dc2626' : '#0fa96e';
 
+  // IRA line only if relevant
+  var iraHTML = '';
+  if(totalIRA > 0){
+    iraHTML = '<div class="result-item"><div class="result-item-label">IRA incluses (1% CRD > 10k\u20ac)</div><div class="result-item-value" style="color:var(--accent)">' + fmt(totalIRA) + '</div></div>';
+  }
+
   var racHTML = '';
   if(montantRAC > 0){
-    racHTML = '<div class="result-item"><div class="result-item-label">Nouvelle mensualit\u00e9 estim\u00e9e</div><div class="result-item-value highlight">' + fmt(nouvMens) + '</div></div>'
+    racHTML = '<div class="result-item"><div class="result-item-label">Montant total financ\u00e9</div><div class="result-item-value highlight">' + fmt(montantRAC) + '</div></div>'
+            + iraHTML
+            + '<div class="result-item"><div class="result-item-label">Nouvelle mensualit\u00e9 (7,03%)</div><div class="result-item-value highlight">' + fmt(nouvMens) + '</div></div>'
             + '<div class="result-item"><div class="result-item-label">Taux apr\u00e8s regroupement</div><div class="result-item-value" style="color:' + colorApres + '">' + pct(teApres) + '</div></div>'
             + '<div class="result-item"><div class="result-item-label">Gain mensuel estim\u00e9</div><div class="result-item-value" style="color:#0fa96e">' + (gain > 0 ? '+' + fmt(gain) : '\u2014') + '</div></div>';
   }
