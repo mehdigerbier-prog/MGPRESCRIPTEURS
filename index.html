@@ -622,8 +622,258 @@ function addCredit(){
   list.appendChild(div);
 }
 
+function genererPDF(){
+  var r = document.getElementById('calcResult');
+  if(!r || r.querySelector('.result-placeholder')){ alert('Veuillez d\u2019abord renseigner les donn\u00e9es pour obtenir un r\u00e9sultat.'); return; }
+
+  // Collect data
+  var rev1 = parseFloat(document.getElementById('rev1').value)||0;
+  var rev2 = parseFloat(document.getElementById('rev2').value)||0;
+  var rev3 = parseFloat(document.getElementById('rev3').value)||0;
+  var revTotal = rev1+rev2+rev3;
+  var loyer = parseFloat(document.getElementById('loyer').value)||0;
+  var treso = parseFloat(document.getElementById('treso').value)||0;
+  var duree = parseInt(document.getElementById('duree').value);
+  var dureeLabel = {84:'7 ans',120:'10 ans',144:'12 ans',180:'15 ans'}[duree]||(duree/12+' ans');
+
+  var rows = document.querySelectorAll('.credit-row');
+  var totalMens=0, totalCRD=0, totalIRA=0;
+  var creditsData = [];
+  var typeLabels = {conso:'Credit conso',immo:'Credit immo',auto:'Credit auto',renouv:'Renouvelable'};
+  rows.forEach(function(row,idx){
+    var type = row.querySelector('.credit-type')?row.querySelector('.credit-type').value:'conso';
+    var mens = parseFloat(row.querySelector('.credit-amount')?row.querySelector('.credit-amount').value:0)||0;
+    var crd  = parseFloat(row.querySelector('.credit-crd')?row.querySelector('.credit-crd').value:0)||0;
+    var ira  = (type!=='immo'&&crd>10000)?crd*0.01:0;
+    if(mens>0||crd>0) creditsData.push({label:(typeLabels[type]||type)+' '+(idx+1),mens:mens,crd:crd,ira:ira});
+    totalMens+=mens; totalCRD+=crd; totalIRA+=ira;
+  });
+
+  var montantRAC = totalCRD>0?(totalCRD+totalIRA+treso):(totalMens*duree*0.6+treso);
+  if(montantRAC<treso) montantRAC=treso;
+  var tm=0.0703/12;
+  var nouvMens = montantRAC>0?((tm===0)?montantRAC/duree:(tm*montantRAC)/(1-Math.pow(1+tm,-duree))):0;
+  var teActuel = revTotal>0?(totalMens+loyer)/revTotal:0;
+  var teApres  = revTotal>0?(nouvMens+loyer)/revTotal:0;
+  var gain     = totalMens-nouvMens;
+
+  var dureeLabel = {84:'7 ans',120:'10 ans',144:'12 ans',180:'15 ans'}[duree]||(duree/12+' ans');
+
+  var verdictText;
+  if(teActuel<=0.35) verdictText='Client potentiellement financable directement.';
+  else if(teApres<=0.35) verdictText='Un regroupement de credits peut debloquer la situation.';
+  else verdictText='Dossier complexe - analyse approfondie recommandee.';
+
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+  // ── Build PDF binary ────────────────────────────────────────
+  // We build a minimal but valid PDF with proper structure
+  var W=595, H=842, m=40;
+
+  function esc(s){
+    // Convert to latin-1 safe string for PDF
+    return String(s)
+      .replace(/\\/g,'\\\\')
+      .replace(/\(/g,'\\(')
+      .replace(/\)/g,'\\)')
+      .replace(/é/g,'e').replace(/è/g,'e').replace(/ê/g,'e').replace(/ë/g,'e')
+      .replace(/à/g,'a').replace(/â/g,'a').replace(/ä/g,'a')
+      .replace(/î/g,'i').replace(/ï/g,'i')
+      .replace(/ô/g,'o').replace(/ö/g,'o')
+      .replace(/ù/g,'u').replace(/û/g,'u').replace(/ü/g,'u')
+      .replace(/ç/g,'c').replace(/ñ/g,'n')
+      .replace(/É/g,'E').replace(/È/g,'E').replace(/Ê/g,'E')
+      .replace(/À/g,'A').replace(/Â/g,'A')
+      .replace(/Î/g,'I').replace(/Ô/g,'O').replace(/Ù/g,'U').replace(/Û/g,'U')
+      .replace(/Ç/g,'C')
+      .replace(/\u2019/g,"'").replace(/\u2014/g,'-').replace(/\u2013/g,'-')
+      .replace(/\u00a0/g,' ').replace(/[^\x20-\x7E]/g,'?');
+  }
+  function fmtNum(n){
+    var s = Math.round(n).toString();
+    var result = '';
+    var count = 0;
+    for(var i=s.length-1;i>=0;i--){
+      if(count>0&&count%3===0) result=' '+result;
+      result=s[i]+result;
+      count++;
+    }
+    return result+' EUR';
+  }
+  function fmtPct(n){ return (n*100).toFixed(1)+' %'; }
+
+  var streams = [];
+  var objs = [];
+  var objOffsets = [];
+
+  function addObj(content){
+    var idx = objs.length+1;
+    objs.push(content);
+    return idx;
+  }
+
+  // Build page content stream
+  var cs = [];
+  var y = H-60;
+
+  function setFill(r,g,b){ cs.push((r/255).toFixed(3)+' '+(g/255).toFixed(3)+' '+(b/255).toFixed(3)+' rg'); }
+  function setStroke(r,g,b){ cs.push((r/255).toFixed(3)+' '+(g/255).toFixed(3)+' '+(b/255).toFixed(3)+' RG'); }
+  function rect(x,yy,w,h,fill){ cs.push(x+' '+yy+' '+w+' '+h+' re '+(fill?'f':'S')); }
+  function text(str,x,yy,size,bold){
+    cs.push('BT');
+    cs.push('/F'+(bold?'2':'1')+' '+size+' Tf');
+    cs.push(x+' '+yy+' Td');
+    cs.push('('+esc(str)+') Tj');
+    cs.push('ET');
+  }
+  function line(x1,y1,x2,y2){ cs.push(x1+' '+y1+' m '+x2+' '+y2+' l S'); }
+
+  // Header background
+  setFill(45,42,123);
+  rect(0,H-70,W,70,true);
+
+  // Header text
+  setFill(255,255,255);
+  text('MG',m,H-28,22,true);
+  text('Simulation de regroupement de credits',m+36,H-24,12,true);
+  text('Mehdi Gerbier - Conseiller en regroupement de credits',m+36,H-38,9,false);
+  text('Document genere le '+dateStr,W-m-170,H-38,8,false);
+
+  y = H-90;
+
+  function sectionBar(title, yy){
+    setFill(232,96,10);
+    rect(m,yy-2,4,12,true);
+    setFill(45,42,123);
+    text(title, m+10, yy, 10, true);
+    return yy-18;
+  }
+
+  function dataLine(label, value, yy, highlight){
+    if(highlight){ setFill(240,244,255); rect(m,yy-3,W-m*2,14,true); }
+    setFill(highlight?45:100, highlight?42:116, highlight?123:139);
+    text(label, m+6, yy+4, 8, highlight);
+    setFill(highlight?45:30,highlight?42:30,highlight?123:46);
+    text(value, W-m-6-value.length*4.5, yy+4, 8, true);
+    setStroke(228,230,240);
+    cs.push('0.3 w');
+    line(m,yy-4,W-m,yy-4);
+    return yy-16;
+  }
+
+  // REVENUS
+  y = sectionBar('Revenus du foyer', y);
+  if(rev1>0) y=dataLine('Revenus emprunteur', fmtNum(rev1), y, false);
+  if(rev2>0) y=dataLine('Revenus co-emprunteur', fmtNum(rev2), y, false);
+  if(rev3>0) y=dataLine('Allocations / autres', fmtNum(rev3), y, false);
+  y=dataLine('TOTAL REVENUS', fmtNum(revTotal), y, true);
+  y-=8;
+
+  // CREDITS
+  y = sectionBar('Credits actuels', y);
+  creditsData.forEach(function(c){
+    var val2 = 'Mens. '+fmtNum(c.mens);
+    if(c.crd>0) val2+=' | CRD '+fmtNum(c.crd);
+    if(c.ira>0) val2+=' | IRA '+fmtNum(c.ira);
+    y=dataLine(c.label, val2, y, false);
+  });
+  if(loyer>0) y=dataLine('Loyer mensuel', fmtNum(loyer), y, false);
+  y=dataLine('TOTAL CHARGES', fmtNum(totalMens+loyer), y, true);
+  if(totalIRA>0) y=dataLine('IRA total (1% du CRD > 10000 EUR)', fmtNum(totalIRA), y, false);
+  y-=8;
+
+  // SIMULATION
+  y = sectionBar('Simulation du regroupement', y);
+  if(treso>0) y=dataLine('Tresorerie souhaitee', fmtNum(treso), y, false);
+  y=dataLine('Duree du regroupement', dureeLabel, y, false);
+  y=dataLine('Montant total finance', fmtNum(montantRAC), y, true);
+  y=dataLine('Taux applique', '7,03 % annuel', y, false);
+  y=dataLine('Nouvelle mensualite estimee', fmtNum(nouvMens), y, true);
+  y=dataLine('Taux d endettement actuel', fmtPct(teActuel), y, false);
+  y=dataLine('Taux d endettement apres RAC', fmtPct(teApres), y, false);
+  y=dataLine('Gain mensuel estime', (gain>0?'+':'')+fmtNum(gain), y, false);
+  y-=12;
+
+  // VERDICT BOX
+  var vr,vg,vb,vbr,vbg,vbb;
+  if(teActuel<=0.35){vr=15;vg=169;vb=110;vbr=236;vbg=253;vbb=245;}
+  else if(teApres<=0.35){vr=234;vg=88;vb=12;vbr=255;vbg=247;vbb=237;}
+  else{vr=220;vg=38;vb=38;vbr=254;vbg=242;vbb=242;}
+  setFill(vbr,vbg,vbb);
+  rect(m,y-6,W-m*2,30,true);
+  setStroke(vr,vg,vb);
+  cs.push('1 w');
+  rect(m,y-6,W-m*2,30,false);
+  setFill(vr,vg,vb);
+  text('VERDICT', m+8, y+14, 10, true);
+  setFill(50,50,50);
+  text(verdictText, m+8, y+2, 9, false);
+  y-=46;
+
+  // CONTACT BLOCK
+  setFill(45,42,123);
+  rect(m,y-6,W-m*2,28,true);
+  setFill(255,255,255);
+  text('Mehdi Gerbier - Conseiller en regroupement de credits', m+60, y+14, 10, true);
+  text('Tel : 07 83 89 16 32', m+130, y+2, 9, false);
+  y-=46;
+
+  // DISCLAIMER
+  setFill(150,150,170);
+  text('Ce document est une simulation indicative. Il ne constitue pas une offre de credit.', m, y, 7, false);
+  text('Le resultat depend de l analyse complete du dossier et reste soumis a acceptation.', m, y-10, 7, false);
+
+  var contentStr = cs.join('\n');
+
+  // Build PDF objects
+  var catalog, pages, page, content, font1, font2;
+
+  font1 = addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  font2 = addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+
+  var contentBytes = unescape(encodeURIComponent(contentStr));
+  content = addObj('<< /Length '+contentBytes.length+' >>\nstream\n'+contentStr+'\nendstream');
+
+  page = addObj('<< /Type /Page /Parent 5 0 R /MediaBox [0 0 '+W+' '+H+'] /Contents '+content+' 0 R /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> >>');
+  pages = addObj('<< /Type /Pages /Kids ['+page+' 0 R] /Count 1 >>');
+  catalog = addObj('<< /Type /Catalog /Pages '+pages+' 0 R >>');
+
+  // Build PDF bytes
+  var pdfLines = ['%PDF-1.4'];
+  var offsets = [];
+  for(var i=0;i<objs.length;i++){
+    offsets.push(pdfLines.join('\n').length+1);
+    pdfLines.push((i+1)+' 0 obj');
+    pdfLines.push(objs[i]);
+    pdfLines.push('endobj');
+  }
+  var xrefOffset = pdfLines.join('\n').length+1;
+  pdfLines.push('xref');
+  pdfLines.push('0 '+(objs.length+1));
+  pdfLines.push('0000000000 65535 f ');
+  offsets.forEach(function(o){ pdfLines.push(('0000000000'+o).slice(-10)+' 00000 n '); });
+  pdfLines.push('trailer');
+  pdfLines.push('<< /Size '+(objs.length+1)+' /Root '+catalog+' 0 R >>');
+  pdfLines.push('startxref');
+  pdfLines.push(xrefOffset);
+  pdfLines.push('%%EOF');
+
+  var pdfStr = pdfLines.join('\n');
+  var blob = new Blob([pdfStr], {type:'application/pdf'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'simulation-MG-'+dateStr.replace(/\//g,'-')+'.pdf';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
+
 function removeCredit(btn){
-  const rows = document.querySelectorAll('.credit-row');
+  var rows = document.querySelectorAll('.credit-row');
   if(rows.length > 1){ btn.closest('.credit-row').remove(); calcUpdate(); }
 }
 
@@ -730,7 +980,10 @@ function calcUpdate(){
     + racHTML
     + '</div>'
     + '<p style="font-size:.82rem;color:#64748b;margin-bottom:.75rem">' + conseil + '</p>'
-    + '<div class="result-cta"><a href="tel:0783891632" class="btn btn-orange" style="width:100%;justify-content:center">\ud83d\udcde Transmettre ce dossier \u00e0 Mehdi \u2014 07 83 89 16 32</a></div>'
+    + '<div class="result-cta" style="display:grid;gap:.6rem">'
+    + '<a href="tel:0783891632" class="btn btn-orange" style="width:100%;justify-content:center">\ud83d\udcde Appeler Mehdi \u2014 07 83 89 16 32</a>'
+    + '<button onclick="genererPDF()" class="btn" style="width:100%;justify-content:center;background:#1e1e2e;color:#fff;border-radius:999px;font-weight:700;font-size:.9rem;padding:1rem 2rem;cursor:pointer">\ud83d\udcc4 T\u00e9l\u00e9charger le bilan PDF</button>'
+    + '</div>'
     + '</div>';
 }
 
