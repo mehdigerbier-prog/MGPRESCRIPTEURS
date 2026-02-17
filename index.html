@@ -651,8 +651,10 @@ function genererPDF(){
 
   var montantRAC = totalCRD>0?(totalCRD+totalIRA+treso):(totalMens*duree*0.6+treso);
   if(montantRAC<treso) montantRAC=treso;
+  var honorairesPDF = montantRAC * 0.08;
+  var montantTotalPDF = montantRAC + honorairesPDF;
   var tm=0.0703/12;
-  var nouvMens = montantRAC>0?((tm===0)?montantRAC/duree:(tm*montantRAC)/(1-Math.pow(1+tm,-duree))):0;
+  var nouvMens = montantTotalPDF>0?((tm===0)?montantTotalPDF/duree:(tm*montantTotalPDF)/(1-Math.pow(1+tm,-duree))):0;
   var teActuel = revTotal>0?(totalMens+loyer)/revTotal:0;
   var teApres  = revTotal>0?(nouvMens+loyer)/revTotal:0;
   var gain     = totalMens-nouvMens;
@@ -787,7 +789,7 @@ function genererPDF(){
   y = sectionBar('Simulation du regroupement', y);
   if(treso>0) y=dataLine('Tresorerie souhaitee', fmtNum(treso), y, false);
   y=dataLine('Duree du regroupement', dureeLabel, y, false);
-  y=dataLine('Montant total finance', fmtNum(montantRAC), y, true);
+  y=dataLine('Montant total finance', fmtNum(montantTotalPDF), y, true);
   y=dataLine('Taux applique', '7,03 % annuel', y, false);
   y=dataLine('Nouvelle mensualite estimee', fmtNum(nouvMens), y, true);
   y=dataLine('Taux d endettement actuel', fmtPct(teActuel), y, false);
@@ -925,11 +927,13 @@ function calcUpdate(){
   // Si pas de CRD renseigné, estimation conservatrice sur les mensualités
   var montantRAC = totalCRD > 0 ? (totalCRD + totalIRA + treso) : (totalMens * duree * 0.6 + treso);
   if(montantRAC < treso) montantRAC = treso;
+  var honoraires = montantRAC * 0.08;
+  var montantTotal = montantRAC + honoraires;
 
   // Taux 7,03% annuel fixe
   var tauxMensuel = 0.0703 / 12;
   var nouvMens = 0;
-  if(montantRAC > 0){ nouvMens = calcPMT(tauxMensuel, duree, montantRAC); }
+  if(montantTotal > 0){ nouvMens = calcPMT(tauxMensuel, duree, montantTotal); }
 
   var totalApres = nouvMens + loyer;
   var teApres = totalApres / rev;
@@ -964,7 +968,7 @@ function calcUpdate(){
 
   var racHTML = '';
   if(montantRAC > 0){
-    racHTML = '<div class="result-item"><div class="result-item-label">Montant total financ\u00e9</div><div class="result-item-value highlight">' + fmt(montantRAC) + '</div></div>'
+    racHTML = '<div class="result-item"><div class="result-item-label">Montant total financ\u00e9</div><div class="result-item-value highlight">' + fmt(montantTotal) + '</div></div>'
             + iraHTML
             + '<div class="result-item"><div class="result-item-label">Nouvelle mensualit\u00e9 (7,03%)</div><div class="result-item-value highlight">' + fmt(nouvMens) + '</div></div>'
             + '<div class="result-item"><div class="result-item-label">Taux apr\u00e8s regroupement</div><div class="result-item-value" style="color:' + colorApres + '">' + pct(teApres) + '</div></div>'
